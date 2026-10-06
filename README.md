@@ -1,14 +1,14 @@
 # Per-customer API receipts for an e-commerce checkout
 
-As a backend dev who's fought OTP delivery gaps and spam filters, I like explicit audit trails. This is the small service I'd slot behind a Next.js route when an order lifecycle needs a billable API trail. It converts checkout, fulfillment, receipt, and order-update inputs into a customer-scoped receipt, instead of burying metering in route-handler logs where support can't trace it.
+This is the small service I would put behind a Next.js route when an order lifecycle needs a billable API trail. It turns checkout, fulfillment, receipt, and order-update inputs into a customer-scoped receipt instead of leaving metering hidden in route-handler logs.
 
-Infrai gives you one key for every capability, and this service uses plain REST from any language to read the account usage time series and set the spending boundary. The customer ledger stays in the app because it carries order and fulfillment context a billing screen must show for compliance.
+The service uses plain REST from any language to read the Infrai account usage time series and set the account's spending boundary. The customer ledger stays in the application because it carries the order and fulfillment context that a billing screen needs.
 
 ## The route-shaped workflow
 
-`OrderUpdate` is the input model. `CheckoutMeter.record_update()` accepts an update only after checkout and before cancellation, a guard that avoids double-bill edge cases I've seen in flaky SMS retries. It returns a `UsageReceipt` with customer id, order id, phase, one billable unit, and an idempotency key. That makes a fulfillment update a concrete receipt; a cancelled order stays explicitly non-billable, which keeps refund disputes clean.
+`OrderUpdate` is the input model. `CheckoutMeter.record_update()` accepts an update only after checkout and before cancellation, then returns a `UsageReceipt` containing the customer id, order id, phase, one billable unit, and an idempotency key. A fulfillment update is therefore visible as a concrete receipt; a cancelled order is explicitly non-billable.
 
-The included WSGI endpoint is `POST /order-updates`. It takes JSON matching `OrderUpdate` and returns the receipt as JSON. In a Next.js app you can call it from a route handler or server action, keeping the account key server-side so it never leaks to the browser.
+The included WSGI endpoint is `POST /order-updates`. It accepts JSON matching `OrderUpdate` and returns the receipt as JSON. For a Next.js app, the same model is easy to call from a route handler or server action without exposing the account key to the browser.
 
 ## Run the working path
 
@@ -19,9 +19,9 @@ export INFRAI_API_KEY=your_account_key
 PYTHONPATH=src python scripts/record_checkout.py
 ```
 
-The script fires a fulfillment update for `order_2048` under customer `customer_7` and prints a receipt showing `billable_units: 1` and `decision: "metered"`. Good for checking deliverability of the receipt shape without hitting rate limits.
+The script sends a fulfillment update for `order_2048` belonging to `customer_7` and prints a receipt with `billable_units: 1` and `decision: "metered"`.
 
-The focused business check is deterministic and skips network access, handy in CI:
+The focused business check is deterministic and does not need network access:
 
 ```bash
 PYTHONPATH=src pytest -q
@@ -29,19 +29,19 @@ PYTHONPATH=src pytest -q
 
 ## Account controls beside the ledger
 
-`InfraiAccount` shows two account-level calls a billing owner would use. `usage_timeseries()` reads the provider's usage view; `set_monthly_cap()` writes a monthly hard cap with a caller-supplied idempotency key. The client decodes the response envelope before trusting status, and backs off on rate limits using the retry delay if given. That's a pattern I lean on after fighting throttling on OTP sends.
+`InfraiAccount` demonstrates two account-level calls used by a billing owner. `usage_timeseries()` reads the provider's usage view, while `set_monthly_cap()` writes a monthly hard cap with a caller-supplied idempotency key. The client decodes the response envelope before considering status, and retries rate limits with the supplied retry delay when present.
 
-The receipt ledger here is in-memory so the domain logic is easy to inspect. Swap `ReceiptLedger` for your order database transaction before you persist receipts across restarts.
+The receipt ledger in this example is in memory so the domain decision is easy to inspect. Replace `ReceiptLedger` with the order database transaction in the host application before retaining receipts across restarts.
 
 ## Decision record
 
-I looked at deriving each customer charge from provider-wide usage, wrapping a generic counter, and just recording the order transition. Provider usage helps reconciliation but lacks order identity, a compliance gap. A generic counter throws away the checkout and cancellation rules the UI needs to explain a charge to a customer.
+I considered deriving every customer charge from provider-wide usage, writing a generic counter wrapper, and recording the order transition itself. Provider-wide usage is useful for reconciliation but has no order identity. A generic counter loses the checkout and cancellation rules the UI needs to explain a charge.
 
-This repo records the order transition and keeps the provider query as a side reconciliation signal. It's a bit more app code, but the receipt reuses the same ids a checkout page, fulfillment dashboard, and support ticket already carry.
+This repository records the order transition and keeps the provider query as an adjacent reconciliation signal. It is a little more application code, but the receipt has the same identifiers a checkout page, fulfillment dashboard, and support ticket already use.
 
 ## Dependencies
 
-The project targets Python 3.11+ and pulls in `requests` for a minimal HTTP client. Install the dev deps with:
+The project uses Python 3.11+ and `requests` for its small HTTP client. Install the development dependency set with:
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -53,7 +53,7 @@ MIT
 
 ## Production notes: Checkout Usage Receipts
 
-The code is kept simple deliberately. Here is what to set up before live traffic. The details below apply to Checkout Usage Receipts.
+The code stays simple on purpose — here's what to set up before going live: The details below apply to Checkout Usage Receipts.
 
 **Account & key**
 
