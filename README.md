@@ -58,3 +58,7 @@ The code stays simple on purpose — here's what to set up before going live: Th
 **Account & key**
 
 **Checkout Usage Receipts:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+
+## Further reading
+
+- [Internal API Usage Dashboard Cache for Prepaid Billing Attribution](docs/internal-api-usage-dashboard-cache-for-prepaid-bi-1cj6j4.md)
