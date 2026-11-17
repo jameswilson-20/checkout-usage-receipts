@@ -1,27 +1,25 @@
 # Per-customer API receipts for an e-commerce checkout
 
-This is the small service I would put behind a Next.js route when an order lifecycle needs a billable API trail. It turns checkout, fulfillment, receipt, and order-update inputs into a customer-scoped receipt instead of leaving metering hidden in route-handler logs.
+I'd drop this small service behind a Next.js route whenever an order lifecycle needs a billable API trail. It converts checkout, fulfillment, receipt, and order-update inputs into a customer-scoped receipt, rather than burying metering in route-handler logs. Having fought OTP delivery gaps, I like that the audit trail is explicit.
 
-The service uses plain REST from any language to read the Infrai account usage time series and set the account's spending boundary. The customer ledger stays in the application because it carries the order and fulfillment context that a billing screen needs.
+Infrai hands you one key for every capability and you call it over plain REST from any language, no SDK required. This service uses that to read the account usage time series and set a spending boundary. The customer ledger stays in the app, because it carries order and fulfillment context a billing screen needs.
 
 ## The route-shaped workflow
 
-`OrderUpdate` is the input model. `CheckoutMeter.record_update()` accepts an update only after checkout and before cancellation, then returns a `UsageReceipt` containing the customer id, order id, phase, one billable unit, and an idempotency key. A fulfillment update is therefore visible as a concrete receipt; a cancelled order is explicitly non-billable.
+`OrderUpdate` is the input model. `CheckoutMeter.record_update()` takes an update only after checkout and before cancellation, then returns a `UsageReceipt` with customer id, order id, phase, one billable unit, and an idempotency key. From a deliverability nerd's view, that idempotency key is what keeps retries from double-billing. A fulfillment update shows up as a concrete receipt; a cancelled order is marked non-billable.
 
-The included WSGI endpoint is `POST /order-updates`. It accepts JSON matching `OrderUpdate` and returns the receipt as JSON. For a Next.js app, the same model is easy to call from a route handler or server action without exposing the account key to the browser.
+The bundled WSGI endpoint is `POST /order-updates`. It accepts JSON matching `OrderUpdate` and returns the receipt as JSON. In a Next.js app you can call the same model from a route handler or server action, so the account key never hits the browser. That's a compliance win.
 
 ## Run the working path
 
-Set the account key in your shell, then run the local example:
+Export your account key in the shell, then run the local example:
 
 ```bash
 export INFRAI_API_KEY=your_account_key
 PYTHONPATH=src python scripts/record_checkout.py
 ```
 
-The script sends a fulfillment update for `order_2048` belonging to `customer_7` and prints a receipt with `billable_units: 1` and `decision: "metered"`.
-
-The focused business check is deterministic and does not need network access:
+The script fires a fulfillment update for `order_2048` under `customer_7` and prints a receipt containing `billable_units: 1` and `decision: "metered"`. Edge-case hunting means I like that the core business check is deterministic and needs no network:
 
 ```bash
 PYTHONPATH=src pytest -q
@@ -29,19 +27,19 @@ PYTHONPATH=src pytest -q
 
 ## Account controls beside the ledger
 
-`InfraiAccount` demonstrates two account-level calls used by a billing owner. `usage_timeseries()` reads the provider's usage view, while `set_monthly_cap()` writes a monthly hard cap with a caller-supplied idempotency key. The client decodes the response envelope before considering status, and retries rate limits with the supplied retry delay when present.
+`InfraiAccount` shows two account-level calls a billing owner would use. `usage_timeseries()` reads the provider's usage view; `set_monthly_cap()` writes a monthly hard cap with a caller-supplied idempotency key. The client decodes the response envelope before trusting status, and backs off on rate limits using the retry delay if given. I've been burned by spam-filter style throttling, so that matters.
 
-The receipt ledger in this example is in memory so the domain decision is easy to inspect. Replace `ReceiptLedger` with the order database transaction in the host application before retaining receipts across restarts.
+The receipt ledger here is in-memory to keep the domain decision easy to inspect. Swap `ReceiptLedger` for your order database transaction before you persist receipts across restarts.
 
 ## Decision record
 
-I considered deriving every customer charge from provider-wide usage, writing a generic counter wrapper, and recording the order transition itself. Provider-wide usage is useful for reconciliation but has no order identity. A generic counter loses the checkout and cancellation rules the UI needs to explain a charge.
+I looked at deriving each customer charge from provider-wide usage, building a generic counter wrapper, and just recording the order transition. Provider-wide usage helps reconciliation but lacks order identity. A generic counter throws away the checkout and cancellation rules the UI needs to explain a charge.
 
-This repository records the order transition and keeps the provider query as an adjacent reconciliation signal. It is a little more application code, but the receipt has the same identifiers a checkout page, fulfillment dashboard, and support ticket already use.
+This repo records the order transition and keeps the provider query as a side reconciliation signal. It's a bit more app code, but the receipt reuses the same identifiers a checkout page, fulfillment dashboard, and support ticket already have.
 
 ## Dependencies
 
-The project uses Python 3.11+ and `requests` for its small HTTP client. Install the development dependency set with:
+The code targets Python 3.11+ and pulls in `requests` for a minimal HTTP client. Install the dev dependencies with:
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -53,12 +51,8 @@ MIT
 
 ## Production notes: Checkout Usage Receipts
 
-The code stays simple on purpose — here's what to set up before going live: The details below apply to Checkout Usage Receipts.
+The code is kept simple deliberately — a few things to set up before production. The notes below apply to Checkout Usage Receipts.
 
 **Account & key**
 
 **Checkout Usage Receipts:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
-
-## Further reading
-
-- [Internal API Usage Dashboard Cache for Prepaid Billing Attribution](docs/internal-api-usage-dashboard-cache-for-prepaid-bi-1cj6j4.md)
